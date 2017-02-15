@@ -12,9 +12,8 @@ App::uses('PermissionType', 'Model');
 class PermissionableBehavior extends ModelBehavior {
 
 /**
- * beforeFind can be used to cancel find operations, or modify the query that will be executed.
- * By returning null/false you can abort a find. By returning an array you can modify/replace the query
- * that is going to be run.
+ * beforeFind callback.
+ * Filter all the requests to return only the resources that the current users is authorized to access.
  *
  * @param Model $model Model using this behavior
  * @param array $queryData Data used to execute this query, i.e. conditions, order, etc.
@@ -22,14 +21,11 @@ class PermissionableBehavior extends ModelBehavior {
  *   $query that will be eventually run.
  */
 	public function beforeFind(Model $model, $queryData = []) {
-		// If the current user is a normal user (all roles except root).
-		// Add conditions to the request that will check with the ACL and ensure the user doesn't access
-		// a resource it is not authorized to.
+		// Augment the request to return only acos users are authorized to access.
 		if (User::get('Role.name') != Role::ROOT) {
 
-			// Depending on the target model the user wants to access,
-			// the permissions are managed by a specific model.
-			// ex : UserResourcePermission
+			// Permissions are pre-calculated by a view functions of the acos/aros.
+			// For the users and resources the permissions are provided by the model UserResourcePermission.
 			$userPermissionModelName = 'User' . $model->alias . 'Permission';
 			$foreignModelPrimaryKey = Inflector::underscore($model->alias) . '_id';
 
@@ -50,7 +46,7 @@ class PermissionableBehavior extends ModelBehavior {
 				]
 			], false);
 
-			// Return the permissions models.
+			// Return permission data.
 			if (empty($queryData['contain'])) {
 				$queryData['contain'] = [];
 			}
