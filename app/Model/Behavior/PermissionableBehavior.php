@@ -22,9 +22,9 @@ class PermissionableBehavior extends ModelBehavior {
  *   $query that will be eventually run.
  */
 	public function beforeFind(Model $model, $queryData = []) {
-		// If the current user is a normal user (all roles except root),
-		// all his requests will be augmented with the permissionable behavior
-		// to ensure he can only access records he has permission for.
+		// If the current user is a normal user (all roles except root).
+		// Add conditions to the request that will check with the ACL and ensure the user doesn't access
+		// a resource it is not authorized to.
 		if (User::get('Role.name') != Role::ROOT) {
 
 			// Depending on the target model the user wants to access,
@@ -33,61 +33,47 @@ class PermissionableBehavior extends ModelBehavior {
 			$userPermissionModelName = 'User' . $model->alias . 'Permission';
 			$foreignModelPrimaryKey = Inflector::underscore($model->alias) . '_id';
 
-			// Filter options.
-			$permOptions = [
-				'fields' => [
-					$userPermissionModelName . '.permission_id',
-					$userPermissionModelName . '.permission_type'
-				],
-				'conditions' => [
-					// We're looking for permissions for the current user.
-					$userPermissionModelName . '.user_id' => User::get('id'),
-					// The user should have a permission set.
-					$userPermissionModelName . '.permission_type >=' => PermissionType::READ,
-				],
-				'contain' => [$userPermissionModelName]
-			];
-
-			// Bind the model the user is performing a find to our permissions model system.
-			$model->bindModel(
-				[
-					'hasOne' => [
-						$userPermissionModelName => [
-							'foreignKey' => $foreignModelPrimaryKey
-						],
-						'Permission' => [
-							'foreignKey' => false,
-							'conditions' => ['Permission.id' => $userPermissionModelName . '.permission_id '],
-							'type' => 'LEFT'
+			// Bind the permissions models in order to check access.
+			$model->bindModel([
+				'hasOne' => [
+					$userPermissionModelName => [
+						'foreignKey' => $foreignModelPrimaryKey,
+						'conditions' => [
+							$userPermissionModelName . '.user_id' => User::get('id'),
+							$userPermissionModelName . '.permission_type >=' => PermissionType::READ,
 						]
+					],
+					'Permission' => [
+						'foreignKey' => false,
+						'conditions' => ['Permission.id = '. $userPermissionModelName . '.permission_id ']
 					]
-				], false);
+				]
+			], false);
 
-			// Augment the request to add the fields we want to get
-			if (!empty($queryData['fields'])) {
-				if (!is_array($queryData['fields'])) {
-					$queryData['fields'] = [$queryData['fields']];
-				}
-				$queryData['fields'] = array_merge($queryData['fields'], $permOptions['fields']);
-			}
-
-			// Augment the request to add the condition to filter the request
-			if (empty($queryData['conditions'])) {
-				$queryData['conditions'] = [];
-			}
-			if (!is_array($queryData['conditions'])) {
-				$queryData['conditions'] = [$queryData['conditions']];
-			}
-			$queryData['conditions'] = array_merge($queryData['conditions'], $permOptions['conditions']);
-
-			// Augment the request to add the model we want included in the request results.
+			// Return the permissions models.
 			if (empty($queryData['contain'])) {
 				$queryData['contain'] = [];
 			}
 			if (!is_array($queryData['contain'])) {
 				$queryData['contain'] = [$queryData['contain']];
 			}
-			$queryData['contain'] = array_merge($queryData['contain'], $permOptions['contain']);
+			$contain = [
+				$userPermissionModelName => [ 'fields' => [ $userPermissionModelName . '.*' ] ],
+				'Permission' => [ 'fields' => [  'Permission.*' ] ],
+			];
+			$queryData['contain'] = array_merge($queryData['contain'], $contain);
+
+			// Return only acos the user is authorized to access.
+			if (empty($queryData['conditions'])) {
+				$queryData['conditions'] = [];
+			}
+			if (!is_array($queryData['conditions'])) {
+				$queryData['conditions'] = [$queryData['conditions']];
+			}
+			$conditions = [
+				'Permission.id <>' => null,
+			];
+			$queryData['conditions'] = array_merge($queryData['conditions'], $conditions);
 		}
 
 		return $queryData;
